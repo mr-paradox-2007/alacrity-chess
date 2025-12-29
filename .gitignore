@@ -1,0 +1,15 @@
+# Compiled binaries
+/bin/
+
+# Log files
+/logs/
+
+# Data files
+/data/
+
+# Build artifacts
+/build/
+*.o
+*.out
+*.wasm
+*.js
