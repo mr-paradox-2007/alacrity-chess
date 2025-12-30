@@ -24,3 +24,21 @@ Testing new logger with stress test.
 Tested with 2KB files sizes, and multiple process and much more.
 
 Reverted memory changes.
+
+# Installing all the required stuff to make the project work
+
+Installing emsdk.
+
+Trying my best to troubleshoot and build the web assembly stuff.
+
+Making raylib work on linux.
+
+Testing the raylib native program.
+
+Native works, web ain't working 1 bit.
+
+Tried for 5+ hours, this isn't working.
+
+Switching the plan to native only and just hosting a simple website that works with my server.
+
+Setup a simple test template to checkout html etc.

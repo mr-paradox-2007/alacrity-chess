@@ -1,9 +1,0 @@
-# This file contains the build and run commands for our tests.
-# These commands should be run from the root of the alacrity-chess repository.
-
-# Compile the logger test
-# The -pthread flag is included to ensure compatibility for std::mutex.
-g++ -std=c++17 -pthread common/logger/logger.cpp tests/logger_test.cpp -o bin/logger_test
-
-# Run the test
-# ./bin/logger_test

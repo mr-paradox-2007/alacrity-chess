@@ -1,0 +1,4 @@
+# This file contains the build command for the logger stress test.
+# This should be run from within the alacrity-chess/tests/stress_test directory.
+
+g++ -std=c++17 -pthread ../../common/logger/logger.cpp main.cpp -o ../../bin/stress_test/stress_test
