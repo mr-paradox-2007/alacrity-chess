@@ -41,4 +41,14 @@ Tried for 5+ hours, this isn't working.
 
 Switching the plan to native only and just hosting a simple website that works with my server.
 
-Setup a simple test template to checkout html etc.
+# Restructing everything
+
+Making changes to the file and folder structure and gonna make the build.txt files into actual build scripts and remove clutter.
+
+Then move onto making the hash table for the users login and test for it.
+
+Standardising to snake_case
+
+Creating and testing the hash_table and user login etc.
+
+Hash table working correctly.

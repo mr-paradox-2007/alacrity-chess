@@ -4,9 +4,6 @@
 # Log files
 /logs/
 
-# Data files
-/data/
-
 # Build artifacts
 /build/
 *.o
