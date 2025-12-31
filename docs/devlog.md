@@ -74,3 +74,18 @@ Now developing the LRU cache.
 Making test for LRU cache.
 
 Making sure everything is working a final time.
+
+# Developing the actual server and website.
+
+First making plans on how I am going to make everything step-by-step.
+
+Setting up folders.
+
+Installing the uWebSockets.
+
+No sockets or anything is working idk why.
+
+Got the basic server skeleton done.
+
+Moving to making the authentication stuff.
+
