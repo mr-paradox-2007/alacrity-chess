@@ -1,8 +1,6 @@
 #!/bin/bash
 
-# Test script for Alacrity Chess authentication API
-
-PORT=8888
+PORT=8080
 SERVER_BIN="./bin/alacrity_chess_server"
 
 echo "═══════════════════════════════════════════════════════════"
@@ -10,26 +8,28 @@ echo "  Alacrity Chess - Authentication API Test"
 echo "═══════════════════════════════════════════════════════════"
 echo ""
 
-# Start server in background
-echo "[1/4] Starting server on port $PORT..."
-$SERVER_BIN $PORT > /tmp/server.log 2>&1 &
+if [ ! -f "$SERVER_BIN" ]; then
+    echo "Error: Server binary not found. Run ./build.sh first"
+    exit 1
+fi
+
+echo "[1/5] Starting server on port $PORT..."
+$SERVER_BIN $PORT > server.log 2>&1 &
 SERVER_PID=$!
 sleep 2
 
-# Check if server is running
 if ! ps -p $SERVER_PID > /dev/null; then
     echo "✗ Server failed to start"
-    cat /tmp/server.log
+    cat server.log
     exit 1
 fi
 echo "✓ Server started (PID: $SERVER_PID)"
 echo ""
 
-# Test 1: Register new user
-echo "[2/4] Testing REGISTER..."
+echo "[2/5] Testing REGISTER..."
 REGISTER_JSON='{"action":"register","username":"alice","password":"securepass123"}'
-REGISTER_RESPONSE=$(echo -n "$REGISTER_JSON" | nc localhost $PORT 2>/dev/null)
 echo "  Request: $REGISTER_JSON"
+REGISTER_RESPONSE=$(echo -n "$REGISTER_JSON" | nc -w 1 localhost $PORT 2>/dev/null)
 echo "  Response: $REGISTER_RESPONSE"
 
 if echo "$REGISTER_RESPONSE" | grep -q '"status":"success"'; then
@@ -39,11 +39,12 @@ else
 fi
 echo ""
 
-# Test 2: Login with correct password
-echo "[3/4] Testing LOGIN (correct password)..."
+sleep 1
+
+echo "[3/5] Testing LOGIN (correct password)..."
 LOGIN_JSON='{"action":"login","username":"alice","password":"securepass123"}'
-LOGIN_RESPONSE=$(echo -n "$LOGIN_JSON" | nc localhost $PORT 2>/dev/null)
 echo "  Request: $LOGIN_JSON"
+LOGIN_RESPONSE=$(echo -n "$LOGIN_JSON" | nc -w 1 localhost $PORT 2>/dev/null)
 echo "  Response: $LOGIN_RESPONSE"
 
 if echo "$LOGIN_RESPONSE" | grep -q '"status":"success"'; then
@@ -53,11 +54,12 @@ else
 fi
 echo ""
 
-# Test 3: Login with wrong password
-echo "[4/4] Testing LOGIN (wrong password)..."
+sleep 1
+
+echo "[4/5] Testing LOGIN (wrong password)..."
 WRONG_LOGIN_JSON='{"action":"login","username":"alice","password":"wrongpass"}'
-WRONG_LOGIN_RESPONSE=$(echo -n "$WRONG_LOGIN_JSON" | nc localhost $PORT 2>/dev/null)
 echo "  Request: $WRONG_LOGIN_JSON"
+WRONG_LOGIN_RESPONSE=$(echo -n "$WRONG_LOGIN_JSON" | nc -w 1 localhost $PORT 2>/dev/null)
 echo "  Response: $WRONG_LOGIN_RESPONSE"
 
 if echo "$WRONG_LOGIN_RESPONSE" | grep -q '"status":"error"'; then
@@ -67,7 +69,36 @@ else
 fi
 echo ""
 
-# Shutdown server
+sleep 1
+
+echo "[5/5] Testing persistence..."
+echo "  Stopping server..."
+kill $SERVER_PID 2>/dev/null
+wait $SERVER_PID 2>/dev/null
+sleep 1
+
+echo "  Restarting server..."
+$SERVER_BIN $PORT > server.log 2>&1 &
+SERVER_PID=$!
+sleep 2
+
+if ! ps -p $SERVER_PID > /dev/null; then
+    echo "  ✗ Server failed to restart"
+    exit 1
+fi
+
+echo "  Testing login with persisted user..."
+PERSIST_LOGIN_JSON='{"action":"login","username":"alice","password":"securepass123"}'
+PERSIST_RESPONSE=$(echo -n "$PERSIST_LOGIN_JSON" | nc -w 1 localhost $PORT 2>/dev/null)
+echo "  Response: $PERSIST_RESPONSE"
+
+if echo "$PERSIST_RESPONSE" | grep -q '"status":"success"'; then
+    echo "  ✓ User data persisted correctly"
+else
+    echo "  ✗ Persistence failed"
+fi
+echo ""
+
 echo "Shutting down server..."
 kill $SERVER_PID 2>/dev/null
 wait $SERVER_PID 2>/dev/null
@@ -75,4 +106,5 @@ wait $SERVER_PID 2>/dev/null
 echo ""
 echo "═══════════════════════════════════════════════════════════"
 echo "  Test Complete!"
+echo "  Check server.log for detailed server output"
 echo "═══════════════════════════════════════════════════════════"

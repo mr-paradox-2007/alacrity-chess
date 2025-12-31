@@ -6,12 +6,11 @@
   - Features: 2D/3D graphics, input handling, cross-platform
 
 ## Networking
-- **uWebSockets**: https://github.com/uNetworking/uWebSockets
-  - Used for: WebSocket server for real-time multiplayer
-  - Installed: `/usr/local/include/uWebSockets/`
-  - Version: Header-only C++ library
-  - Features: Fast, lightweight, production-ready WebSocket support
-  - Installation Date: December 31, 2025
+- **Raw TCP Sockets**: Standard C++ sockets (`<sys/socket.h>`, `<arpa/inet.h>`)
+  - Used for: Direct, low-level communication between the client and server.
+  - Features: Provides a reliable, stream-oriented connection for sending JSON-based messages.
+  - Status: Implemented in the server for handling authentication and game logic.
+
 
 ## Data Structures (Custom Implementation)
 - **Hash Table**: O(1) user lookup & authentication

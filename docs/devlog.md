@@ -89,3 +89,22 @@ Got the basic server skeleton done.
 
 Moving to making the authentication stuff.
 
+Creating the web server.
+
+Using TCP sockets.
+
+Creating the client side raylib client.
+
+Correcting the web server.
+
+Implementing the game.
+
+The login page.
+
+Converting stuff to linux.
+
+WHY IS NOTHING WORKING 😭.
+
+Trying to fix raylib errors.
+
+Trying to make the login system work.
