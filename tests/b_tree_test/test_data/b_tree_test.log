@@ -70,3 +70,29 @@
 [2025-12-31T12:37:01Z] level=INFO module=B_TREE_TEST code=9 msg="Test 9 passed: Deserialization" file="./tests/b_tree_test/main.cpp" line=160
 [2025-12-31T12:37:01Z] level=INFO module=B_TREE_TEST code=10 msg="Test 10 passed: Scalability" file="./tests/b_tree_test/main.cpp" line=192
 [2025-12-31T12:37:01Z] level=INFO module=B_TREE_TEST code=0 msg="All 10 tests passed successfully" file="./tests/b_tree_test/main.cpp" line=208
+[2025-12-31T13:40:11Z] level=INFO module=B_TREE_TEST code=1 msg="Test 1 passed: Insert game records" file="main.cpp" line=53
+[2025-12-31T13:40:11Z] level=INFO module=B_TREE_TEST code=2 msg="Test 2 passed: Multiple inserts" file="main.cpp" line=75
+[2025-12-31T13:40:11Z] level=INFO module=B_TREE_TEST code=3 msg="Test 3 passed: Get all records" file="main.cpp" line=84
+[2025-12-31T13:40:11Z] level=INFO module=B_TREE_TEST code=4 msg="Test 4 passed: Range query by time" file="main.cpp" line=97
+[2025-12-31T13:40:11Z] level=INFO module=B_TREE_TEST code=5 msg="Test 5 passed: Range query for player" file="main.cpp" line=110
+[2025-12-31T13:40:11Z] level=INFO module=B_TREE_TEST code=6 msg="Test 6 passed: Top by ELO" file="main.cpp" line=123
+[2025-12-31T13:40:11Z] level=INFO module=B_TREE_TEST code=7 msg="Test 7 passed: Top for player" file="main.cpp" line=132
+[2025-12-31T13:40:11Z] level=INFO module=B_TREE_TEST code=8 msg="Test 8 passed: Serialization" file="main.cpp" line=145
+[2025-12-31T13:40:11Z] level=INFO module=B_TREE_TEST code=9 msg="Test 9 passed: Deserialization" file="main.cpp" line=160
+[2025-12-31T13:40:11Z] level=INFO module=B_TREE_TEST code=10 msg="Test 10 passed: Scalability" file="main.cpp" line=192
+[2025-12-31T13:40:11Z] level=INFO module=B_TREE_TEST code=11 msg="Test 11 passed: Remove record" file="main.cpp" line=234
+[2025-12-31T13:40:11Z] level=INFO module=B_TREE_TEST code=12 msg="Test 12 passed: Remove with node merge" file="main.cpp" line=275
+[2025-12-31T13:40:11Z] level=INFO module=B_TREE_TEST code=0 msg="All 11 tests passed successfully" file="main.cpp" line=291
+[2025-12-31T13:40:41Z] level=INFO module=B_TREE_TEST code=1 msg="Test 1 passed: Insert game records" file="main.cpp" line=53
+[2025-12-31T13:40:41Z] level=INFO module=B_TREE_TEST code=2 msg="Test 2 passed: Multiple inserts" file="main.cpp" line=75
+[2025-12-31T13:40:41Z] level=INFO module=B_TREE_TEST code=3 msg="Test 3 passed: Get all records" file="main.cpp" line=84
+[2025-12-31T13:40:41Z] level=INFO module=B_TREE_TEST code=4 msg="Test 4 passed: Range query by time" file="main.cpp" line=97
+[2025-12-31T13:40:41Z] level=INFO module=B_TREE_TEST code=5 msg="Test 5 passed: Range query for player" file="main.cpp" line=110
+[2025-12-31T13:40:41Z] level=INFO module=B_TREE_TEST code=6 msg="Test 6 passed: Top by ELO" file="main.cpp" line=123
+[2025-12-31T13:40:41Z] level=INFO module=B_TREE_TEST code=7 msg="Test 7 passed: Top for player" file="main.cpp" line=132
+[2025-12-31T13:40:41Z] level=INFO module=B_TREE_TEST code=8 msg="Test 8 passed: Serialization" file="main.cpp" line=145
+[2025-12-31T13:40:41Z] level=INFO module=B_TREE_TEST code=9 msg="Test 9 passed: Deserialization" file="main.cpp" line=160
+[2025-12-31T13:40:41Z] level=INFO module=B_TREE_TEST code=10 msg="Test 10 passed: Scalability" file="main.cpp" line=192
+[2025-12-31T13:40:41Z] level=INFO module=B_TREE_TEST code=11 msg="Test 11 passed: Remove record" file="main.cpp" line=234
+[2025-12-31T13:40:41Z] level=INFO module=B_TREE_TEST code=12 msg="Test 12 passed: Remove with node merge" file="main.cpp" line=275
+[2025-12-31T13:40:41Z] level=INFO module=B_TREE_TEST code=0 msg="All 11 tests passed successfully" file="main.cpp" line=291

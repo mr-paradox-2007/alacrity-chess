@@ -1,0 +1,1 @@
+g++ -std=c++17 -pthread -I../../includes ../../src/server/core/heap/heap.cpp main.cpp -o ../../bin/heap_test

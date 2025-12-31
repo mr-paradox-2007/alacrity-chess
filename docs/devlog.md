@@ -58,3 +58,19 @@ Hash table working correctly.
 Creating B-tree with presistence.
 
 Creating B-tree tests
+
+B-tree finished.
+
+Moving onto creating graphs for friends management.
+
+Graphs finished.
+
+Going to make a simple matchmaking system using max heap.
+
+Matchmaking test and ds working fine.
+
+Now developing the LRU cache.
+
+Making test for LRU cache.
+
+Making sure everything is working a final time.
