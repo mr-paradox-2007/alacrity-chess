@@ -52,3 +52,9 @@ Standardising to snake_case
 Creating and testing the hash_table and user login etc.
 
 Hash table working correctly.
+
+# Creating the important data structures
+
+Creating B-tree with presistence.
+
+Creating B-tree tests
