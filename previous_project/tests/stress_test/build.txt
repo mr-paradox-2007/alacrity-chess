@@ -1,0 +1,1 @@
+g++ -std=c++17 -pthread ../../src/server/utils/logger/logger.cpp main.cpp -I../../includes -o ../../bin/stress_test

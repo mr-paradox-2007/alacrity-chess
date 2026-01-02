@@ -1,0 +1,1 @@
+g++ -std=c++17 -pthread -I../../includes ../../src/server/utils/logger/logger.cpp ../../src/server/core/b_tree/b_tree.cpp main.cpp -o ../../bin/b_tree_test

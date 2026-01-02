@@ -1,0 +1,4 @@
+[2025-12-31T11:43:13Z] level=INFO module=REGISTER code=3 msg="User 'Ammar' registered successfully." file="main.cpp" line=92
+[2025-12-31T11:43:13Z] level=INFO module=MAIN code=4 msg="User data saved to alacrity-chess/tests/login_signup_demo_test/test_data/user_data.bin" file="main.cpp" line=94
+[2025-12-31T11:43:41Z] level=INFO module=LOGIN code=5 msg="User 'Ammar' authenticated successfully." file="main.cpp" line=107
+[2025-12-31T11:43:49Z] level=ERROR module=LOGIN code=302 msg="Authentication failed for user 'Nigga'." file="main.cpp" line=109

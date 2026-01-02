@@ -1,0 +1,6 @@
+[2025-12-31T10:23:42Z] level=INFO module=LOGGER_TEST code=1 msg="Logger test message 1." file="/home/ammar-anas/Documents/ITU/BSAI24056-Semester-03/DSA/Alacrity Chess/alacrity-chess/tests/logger_test/main.cpp" line=14
+[2025-12-31T10:23:42Z] level=WARN module=LOGGER_TEST code=2 msg="Logger test message 2." file="/home/ammar-anas/Documents/ITU/BSAI24056-Semester-03/DSA/Alacrity Chess/alacrity-chess/tests/logger_test/main.cpp" line=15
+[2025-12-31T10:23:42Z] level=ERROR module=LOGGER_TEST code=3 msg="Logger test message 3." file="/home/ammar-anas/Documents/ITU/BSAI24056-Semester-03/DSA/Alacrity Chess/alacrity-chess/tests/logger_test/main.cpp" line=16
+[2025-12-31T10:41:24Z] level=INFO module=LOGGER_TEST code=1 msg="Logger test message 1." file="/home/ammar-anas/Documents/ITU/BSAI24056-Semester-03/DSA/Alacrity Chess/alacrity-chess/tests/logger_test/main.cpp" line=11
+[2025-12-31T10:41:24Z] level=WARN module=LOGGER_TEST code=2 msg="Logger test message 2." file="/home/ammar-anas/Documents/ITU/BSAI24056-Semester-03/DSA/Alacrity Chess/alacrity-chess/tests/logger_test/main.cpp" line=12
+[2025-12-31T10:41:24Z] level=ERROR module=LOGGER_TEST code=3 msg="Logger test message 3." file="/home/ammar-anas/Documents/ITU/BSAI24056-Semester-03/DSA/Alacrity Chess/alacrity-chess/tests/logger_test/main.cpp" line=13

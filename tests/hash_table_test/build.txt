@@ -1,6 +1,0 @@
-g++ -std=c++17 -pthread \
-    ../../src/server/core/hash_table/hash_table.cpp \
-    ../../src/server/utils/logger/logger.cpp \
-    main.cpp \
-    -I../../includes \
-    -o ../../bin/hash_table_test
