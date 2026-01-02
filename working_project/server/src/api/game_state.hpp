@@ -32,6 +32,7 @@ struct matchmaking_entry {
 class game_state {
 private:
     hash_table<std::string, user_data> users;
+    hash_table<uint64_t, std::string> user_id_to_username;
     hash_table<std::string, session_data> sessions;
     b_tree<uint64_t, match_data> match_history;
     graph<std::string> friend_graph;
@@ -43,6 +44,8 @@ private:
     
     std::mutex state_mutex;
     
+    std::string get_username_by_id(uint64_t user_id);
+    
 public:
     game_state();
     
@@ -50,6 +53,8 @@ public:
     bool login_user(const std::string& username, const std::string& password, std::string& token);
     bool logout_user(const std::string& token);
     bool verify_session(const std::string& token, uint64_t& user_id);
+    
+    uint64_t get_user_id_by_username(const std::string& username);
     
     bool get_user(uint64_t user_id, user_data& user);
     bool update_user_elo(uint64_t user_id, int elo_change);
@@ -66,9 +71,17 @@ public:
     void get_match_history(uint64_t user_id, std::vector<match_data>& history);
 };
 
-inline game_state::game_state() : users(2048), sessions(1024), match_history(5), friend_graph(), session_cache(512) {
+inline game_state::game_state() : users(2048), user_id_to_username(2048), sessions(1024), match_history(5), friend_graph(), session_cache(512) {
     next_match_id = 1;
     next_user_id = 1;
+}
+
+inline std::string game_state::get_username_by_id(uint64_t user_id) {
+    std::string username;
+    if (user_id_to_username.find(user_id, username)) {
+        return username;
+    }
+    return "";
 }
 
 inline bool game_state::register_user(const std::string& username, const std::string& password) {
@@ -94,6 +107,7 @@ inline bool game_state::register_user(const std::string& username, const std::st
     new_user.is_online = false;
     
     users.insert(username, new_user);
+    user_id_to_username.insert(new_user.user_id, username);
     friend_graph.add_vertex(new_user.user_id, username);
     
     return true;
@@ -140,10 +154,13 @@ inline bool game_state::logout_user(const std::string& token) {
     
     sessions.remove(token);
     
-    user_data user;
-    if (users.find(std::to_string(session.user_id), user)) {
-        user.is_online = false;
-        users.update(std::to_string(session.user_id), user);
+    std::string username = get_username_by_id(session.user_id);
+    if (!username.empty()) {
+        user_data user;
+        if (users.find(username, user)) {
+            user.is_online = false;
+            users.update(username, user);
+        }
     }
     
     friend_graph.set_online(session.user_id, false);
@@ -174,18 +191,30 @@ inline bool game_state::get_user(uint64_t user_id, user_data& user) {
         return true;
     }
     
+    std::string username = get_username_by_id(user_id);
+    if (!username.empty() && users.find(username, user)) {
+        session_cache.put(user_id, user);
+        return true;
+    }
+    
     return false;
 }
 
 inline bool game_state::update_user_elo(uint64_t user_id, int elo_change) {
     std::lock_guard<std::mutex> lock(state_mutex);
     
+    std::string username = get_username_by_id(user_id);
+    if (username.empty()) {
+        return false;
+    }
+    
     user_data user;
-    if (!session_cache.get(user_id, user)) {
+    if (!users.find(username, user)) {
         return false;
     }
     
     user.elo_rating += elo_change;
+    users.update(username, user);
     session_cache.put(user_id, user);
     
     return true;
@@ -205,22 +234,51 @@ inline void game_state::queue_for_matchmaking(uint64_t user_id, int elo_rating) 
 inline bool game_state::find_match(uint64_t user_id, uint64_t& opponent_id) {
     std::lock_guard<std::mutex> lock(state_mutex);
     
-    if (matchmaking_queue.empty()) {
+    if (matchmaking_queue.empty() || matchmaking_queue.size() < 2) {
         return false;
     }
     
     try {
-        matchmaking_entry top = matchmaking_queue.extract_max();
-        if (top.user_id == user_id && !matchmaking_queue.empty()) {
-            matchmaking_entry second = matchmaking_queue.extract_max();
-            opponent_id = second.user_id;
-            return true;
+        std::vector<matchmaking_entry> candidates;
+        matchmaking_entry user_entry;
+        bool found_user = false;
+        
+        while (!matchmaking_queue.empty() && candidates.size() < 10) {
+            matchmaking_entry entry = matchmaking_queue.extract_max();
+            if (entry.user_id == user_id) {
+                user_entry = entry;
+                found_user = true;
+                break;
+            }
+            candidates.push_back(entry);
         }
+        
+        if (!found_user) {
+            for (const auto& e : candidates) {
+                matchmaking_queue.insert(e);
+            }
+            return false;
+        }
+        
+        if (matchmaking_queue.empty()) {
+            matchmaking_queue.insert(user_entry);
+            for (const auto& e : candidates) {
+                matchmaking_queue.insert(e);
+            }
+            return false;
+        }
+        
+        matchmaking_entry opponent_entry = matchmaking_queue.extract_max();
+        opponent_id = opponent_entry.user_id;
+        
+        for (const auto& e : candidates) {
+            matchmaking_queue.insert(e);
+        }
+        
+        return true;
     } catch (...) {
         return false;
     }
-    
-    return false;
 }
 
 inline bool game_state::send_friend_request(uint64_t sender_id, uint64_t receiver_id) {
@@ -291,6 +349,16 @@ inline void game_state::get_match_history(uint64_t user_id, std::vector<match_da
             history.push_back(match);
         }
     }
+}
+
+inline uint64_t game_state::get_user_id_by_username(const std::string& username) {
+    std::lock_guard<std::mutex> lock(state_mutex);
+    
+    user_data user;
+    if (users.find(username, user)) {
+        return user.user_id;
+    }
+    return 0;
 }
 
 #endif

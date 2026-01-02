@@ -1,2 +1,0 @@
-[2025-12-31T11:29:20Z] level=INFO module=REGISTER code=3 msg="User 'Ammar Anas' registered successfully." file="main.cpp" line=84
-[2025-12-31T11:29:20Z] level=INFO module=MAIN code=4 msg="User data saved to test_data/user_data.bin" file="main.cpp" line=86

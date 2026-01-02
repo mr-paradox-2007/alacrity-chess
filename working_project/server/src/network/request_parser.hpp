@@ -46,10 +46,20 @@ inline http_request request_parser::parse(const std::string& raw_request) {
         }
     }
     
+    bool in_body = false;
+    std::string body_part;
     while (std::getline(ss, line)) {
-        if (line.empty() || line == "\r") {
-            break;
+        if (in_body) {
+            if (!req.body.empty()) req.body += "\n";
+            req.body += line;
+            continue;
         }
+        
+        if (line.empty() || line == "\r") {
+            in_body = true;
+            continue;
+        }
+        
         size_t colon_pos = line.find(':');
         if (colon_pos != std::string::npos) {
             std::string key = line.substr(0, colon_pos);
@@ -61,9 +71,9 @@ inline http_request request_parser::parse(const std::string& raw_request) {
         }
     }
     
-    std::string body_char;
-    while (std::getline(ss, body_char)) {
-        req.body += body_char;
+    // Remove trailing \r if present
+    if (!req.body.empty() && req.body.back() == '\r') {
+        req.body.pop_back();
     }
     
     return req;

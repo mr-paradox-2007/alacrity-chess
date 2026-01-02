@@ -1,1 +1,0 @@
-g++ -std=c++17 -pthread -I../../includes ../../src/server/utils/logger/logger.cpp ../../src/server/core/hash_table/hash_table.cpp main.cpp -o ../../bin/login_signup_demo_test

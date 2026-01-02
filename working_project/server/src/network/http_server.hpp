@@ -14,6 +14,9 @@
 #include <csignal>
 #include <fstream>
 #include <sstream>
+#include <iostream>
+#include <cerrno>
+#include <cstring>
 
 #include "request_parser.hpp"
 #include "response_builder.hpp"
@@ -103,21 +106,36 @@ inline void http_server::handle_client(int client_socket) {
         buffer[bytes_received] = '\0';
         http_request req = request_parser::parse(std::string(buffer));
         
+        size_t query_pos = req.path.find('?');
+        std::string path_without_query = req.path;
+        if (query_pos != std::string::npos) {
+            path_without_query = req.path.substr(0, query_pos);
+        }
+        
         std::lock_guard<std::mutex> lock(routes_mutex);
-        std::string route_key = req.method + " " + req.path;
+        std::string route_key = req.method + " " + path_without_query;
         
         std::string response_body;
         int status_code = 404;
         std::string content_type = "application/json";
         
-        if (routes.find(route_key) != routes.end()) {
+        if (req.method == "OPTIONS") {
+            status_code = 200;
+            response_body = "";
+            content_type = "text/plain";
+        } else if (routes.find(route_key) != routes.end()) {
             response_body = routes[route_key](req);
             status_code = 200;
         } else if (req.method == "GET") {
-            response_body = serve_static(req.path);
+            std::string static_path = path_without_query;
+            if (static_path == "/") {
+                static_path = "/index.html";
+            }
+            response_body = serve_static(static_path);
             if (!response_body.empty()) {
                 status_code = 200;
-                content_type = get_content_type(req.path);
+                std::string file_path_for_type = static_path;
+                content_type = get_content_type(file_path_for_type);
             } else {
                 response_body = "{\"error\":\"Route not found\"}";
                 status_code = 404;
@@ -135,29 +153,48 @@ inline void http_server::handle_client(int client_socket) {
 }
 
 inline void http_server::start() {
-    if (running) return;
+    if (running) {
+        std::cerr << "Server is already running!" << std::endl;
+        return;
+    }
     
     server_socket = socket(AF_INET, SOCK_STREAM, 0);
-    if (server_socket < 0) return;
+    if (server_socket < 0) {
+        std::cerr << "Error: Failed to create socket: " << strerror(errno) << std::endl;
+        return;
+    }
     
     int opt = 1;
     if (setsockopt(server_socket, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
+        std::cerr << "Error: Failed to set socket options: " << strerror(errno) << std::endl;
         close(server_socket);
+        server_socket = -1;
         return;
     }
     
     struct sockaddr_in server_addr;
+    memset(&server_addr, 0, sizeof(server_addr));
     server_addr.sin_family = AF_INET;
     server_addr.sin_addr.s_addr = INADDR_ANY;
     server_addr.sin_port = htons(port);
     
     if (bind(server_socket, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
+        std::cerr << "Error: Failed to bind to port " << port << ": " << strerror(errno) << std::endl;
+        std::cerr << "Port " << port << " may already be in use. Try: pkill -f chess_server" << std::endl;
         close(server_socket);
+        server_socket = -1;
         return;
     }
     
-    listen(server_socket, 10);
+    if (listen(server_socket, 10) < 0) {
+        std::cerr << "Error: Failed to listen on socket: " << strerror(errno) << std::endl;
+        close(server_socket);
+        server_socket = -1;
+        return;
+    }
+    
     running = true;
+    std::cout << "Server successfully bound to port " << port << std::endl;
     
     while (running) {
         struct sockaddr_in client_addr;

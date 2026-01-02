@@ -46,6 +46,9 @@ inline std::string response_builder::build(int status_code, const std::string& b
     response += "Content-Length: ";
     response += std::to_string(body.length());
     response += "\r\n";
+    response += "Access-Control-Allow-Origin: *\r\n";
+    response += "Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS\r\n";
+    response += "Access-Control-Allow-Headers: Content-Type, Authorization\r\n";
     response += "Connection: close\r\n";
     response += "\r\n";
     response += body;

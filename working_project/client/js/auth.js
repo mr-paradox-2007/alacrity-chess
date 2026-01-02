@@ -16,12 +16,20 @@ class auth {
     }
     
     static async login(username, password) {
-        const response = await api_client.login(username, password);
-        if (response.token) {
-            this.set_token(response.token);
-            return true;
+        try {
+            const response = await api_client.login(username, password);
+            if (response.token) {
+                this.set_token(response.token);
+                return true;
+            }
+            if (response.error) {
+                console.error('Login error:', response.error);
+            }
+            return false;
+        } catch (error) {
+            console.error('Login exception:', error);
+            return false;
         }
-        return false;
     }
     
     static async register(username, password) {
@@ -29,7 +37,12 @@ class auth {
     }
     
     static async logout() {
-        await api_client.logout();
-        this.clear_token();
+        try {
+            await api_client.logout();
+        } catch (error) {
+            console.error('Logout error:', error);
+        } finally {
+            this.clear_token();
+        }
     }
 }

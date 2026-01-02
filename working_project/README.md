@@ -2,23 +2,42 @@
 
 Complete web-based chess platform with advanced data structures and real-time features.
 
-## Building
+## Quick Start
 
 ```bash
-./build.sh
+# Build and start the server
+./start_server.sh
 ```
 
-## Running
+Or manually:
 
 ```bash
+# Build the server
+./build.sh
+
+# Run the server
 ./bin/chess_server
 ```
 
-Server will listen on port 8080.
+Server will listen on **port 8080**.
 
-## Frontend
+## Accessing the Application
 
-Open `client/index.html` in a web browser to access the chess platform UI.
+Once the server is running, open your web browser and navigate to:
+
+**http://localhost:8080**
+
+The server will automatically serve the frontend application.
+
+## Features
+
+- User registration and authentication
+- Session management with tokens
+- User dashboard with stats
+- Leaderboard
+- Friend system (graph-based)
+- Matchmaking queue (max heap)
+- Match history (B-tree)
 
 ## Architecture
 
