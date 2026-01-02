@@ -20,6 +20,8 @@
 #include <unistd.h>
 #include <cstdlib>
 #include <cctype>
+#include <set>
+#include <climits>
 
 struct matchmaking_entry {
     uint64_t user_id;
@@ -58,6 +60,10 @@ private:
     void load_users();
     void save_friend_requests();
     void load_friend_requests();
+    void save_match_history();
+    void load_match_history();
+    void save_friend_graph();
+    void load_friend_graph();
     
 public:
     game_state();
@@ -93,6 +99,8 @@ inline game_state::game_state() : users(2048), user_id_to_username(2048), sessio
     try {
         load_users();
         load_friend_requests();
+        load_match_history();
+        load_friend_graph();
     } catch (...) {
         next_match_id = 1;
         next_user_id = 1;
@@ -374,6 +382,7 @@ inline bool game_state::accept_friend_request(uint64_t user_id, uint64_t friend_
     
     friend_graph.add_edge(user_id, friend_id);
     save_friend_requests();
+    save_friend_graph();
     
     return true;
 }
@@ -434,6 +443,7 @@ inline bool game_state::record_match(uint64_t player1_id, uint64_t player2_id, u
     
     match_history.insert(match.timestamp, match);
     save_users();
+    save_match_history();
     
     std::string username1 = get_username_by_id(player1_id);
     std::string username2 = get_username_by_id(player2_id);
@@ -747,6 +757,228 @@ inline void game_state::load_friend_requests() {
                 
                 if (!requests.empty()) {
                     pending_friend_requests.insert(receiver_id, requests);
+                }
+            }
+        }
+    } catch (...) {
+    }
+}
+
+inline void game_state::save_match_history() {
+    std::string data_dir = "server/data";
+    if (access("server/data", F_OK) != 0) {
+        if (access("data", F_OK) == 0) {
+            data_dir = "data";
+        } else {
+            system("mkdir -p server/data 2>/dev/null || mkdir -p data 2>/dev/null");
+            if (access("server/data", F_OK) == 0) {
+                data_dir = "server/data";
+            } else if (access("data", F_OK) == 0) {
+                data_dir = "data";
+            } else {
+                return;
+            }
+        }
+    }
+    
+    std::string filename = data_dir + "/match_history.json";
+    std::ofstream file(filename);
+    if (!file.is_open()) {
+        return;
+    }
+    
+    file << "{\"matches\":[";
+    bool first = true;
+    std::vector<std::pair<uint64_t, match_data>> all_matches;
+    match_history.range_query(0, UINT64_MAX, all_matches);
+    
+    for (const auto& pair : all_matches) {
+        const match_data& match = pair.second;
+        if (!first) file << ",";
+        first = false;
+        file << "{";
+        file << "\"match_id\":" << match.match_id << ",";
+        file << "\"player1_id\":" << match.player1_id << ",";
+        file << "\"player2_id\":" << match.player2_id << ",";
+        file << "\"winner_id\":" << match.winner_id << ",";
+        file << "\"elo_change_p1\":" << match.elo_change_p1 << ",";
+        file << "\"elo_change_p2\":" << match.elo_change_p2 << ",";
+        file << "\"timestamp\":" << match.timestamp << ",";
+        file << "\"duration_seconds\":" << match.duration_seconds << ",";
+        file << "\"result\":" << match.result;
+        file << "}";
+    }
+    file << "]}";
+    file.close();
+}
+
+inline void game_state::load_match_history() {
+    std::string filename = "server/data/match_history.json";
+    if (access(filename.c_str(), F_OK) != 0) {
+        filename = "data/match_history.json";
+        if (access(filename.c_str(), F_OK) != 0) {
+            return;
+        }
+    }
+    
+    std::ifstream file(filename);
+    if (!file.is_open()) {
+        return;
+    }
+    
+    std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    file.close();
+    
+    if (content.empty() || content.length() < 10) {
+        return;
+    }
+    
+    try {
+        json_value root = json_parser::parse(content);
+        if (root.value_type != json_value::object_type) {
+            return;
+        }
+        
+        auto matches_it = root.object_val.find("matches");
+        if (matches_it != root.object_val.end() && matches_it->second.value_type == json_value::array_type) {
+            for (const auto& match_val : matches_it->second.array_val) {
+                if (match_val.value_type != json_value::object_type) continue;
+                
+                match_data match;
+                auto match_id_it = match_val.object_val.find("match_id");
+                auto p1_it = match_val.object_val.find("player1_id");
+                auto p2_it = match_val.object_val.find("player2_id");
+                auto winner_it = match_val.object_val.find("winner_id");
+                auto timestamp_it = match_val.object_val.find("timestamp");
+                
+                if (match_id_it == match_val.object_val.end() ||
+                    p1_it == match_val.object_val.end() ||
+                    p2_it == match_val.object_val.end() ||
+                    winner_it == match_val.object_val.end() ||
+                    timestamp_it == match_val.object_val.end()) {
+                    continue;
+                }
+                
+                match.match_id = (uint64_t)match_id_it->second.number_val;
+                match.player1_id = (uint64_t)p1_it->second.number_val;
+                match.player2_id = (uint64_t)p2_it->second.number_val;
+                match.winner_id = (uint64_t)winner_it->second.number_val;
+                match.timestamp = (uint64_t)timestamp_it->second.number_val;
+                
+                auto elo1_it = match_val.object_val.find("elo_change_p1");
+                match.elo_change_p1 = (elo1_it != match_val.object_val.end()) ? (int)elo1_it->second.number_val : 0;
+                
+                auto elo2_it = match_val.object_val.find("elo_change_p2");
+                match.elo_change_p2 = (elo2_it != match_val.object_val.end()) ? (int)elo2_it->second.number_val : 0;
+                
+                auto duration_it = match_val.object_val.find("duration_seconds");
+                match.duration_seconds = (duration_it != match_val.object_val.end()) ? (uint64_t)duration_it->second.number_val : 60;
+                
+                auto result_it = match_val.object_val.find("result");
+                match.result = (result_it != match_val.object_val.end()) ? (int)result_it->second.number_val : 0;
+                
+                match_history.insert(match.timestamp, match);
+                if (match.match_id >= next_match_id) {
+                    next_match_id = match.match_id + 1;
+                }
+            }
+        }
+    } catch (...) {
+    }
+}
+
+inline void game_state::save_friend_graph() {
+    std::string data_dir = "server/data";
+    if (access("server/data", F_OK) != 0) {
+        if (access("data", F_OK) == 0) {
+            data_dir = "data";
+        } else {
+            system("mkdir -p server/data 2>/dev/null || mkdir -p data 2>/dev/null");
+            if (access("server/data", F_OK) == 0) {
+                data_dir = "server/data";
+            } else if (access("data", F_OK) == 0) {
+                data_dir = "data";
+            } else {
+                return;
+            }
+        }
+    }
+    
+    std::string filename = data_dir + "/friend_graph.json";
+    std::ofstream file(filename);
+    if (!file.is_open()) {
+        return;
+    }
+    
+    file << "{\"edges\":[";
+    bool first = true;
+    std::set<std::pair<uint64_t, uint64_t>> edges_saved;
+    
+    for (uint64_t user_id = 1; user_id < next_user_id; user_id++) {
+        if (!friend_graph.contains_vertex(user_id)) continue;
+        
+        std::vector<uint64_t> friends;
+        friend_graph.get_friends(user_id, friends);
+        
+        for (uint64_t friend_id : friends) {
+            if (user_id < friend_id) {
+                if (!first) file << ",";
+                first = false;
+                file << "{\"user1\":" << user_id << ",\"user2\":" << friend_id << "}";
+                edges_saved.insert({user_id, friend_id});
+            }
+        }
+    }
+    
+    file << "]}";
+    file.close();
+}
+
+inline void game_state::load_friend_graph() {
+    std::string filename = "server/data/friend_graph.json";
+    if (access(filename.c_str(), F_OK) != 0) {
+        filename = "data/friend_graph.json";
+        if (access(filename.c_str(), F_OK) != 0) {
+            return;
+        }
+    }
+    
+    std::ifstream file(filename);
+    if (!file.is_open()) {
+        return;
+    }
+    
+    std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    file.close();
+    
+    if (content.empty() || content.length() < 10) {
+        return;
+    }
+    
+    try {
+        json_value root = json_parser::parse(content);
+        if (root.value_type != json_value::object_type) {
+            return;
+        }
+        
+        auto edges_it = root.object_val.find("edges");
+        if (edges_it != root.object_val.end() && edges_it->second.value_type == json_value::array_type) {
+            for (const auto& edge_val : edges_it->second.array_val) {
+                if (edge_val.value_type != json_value::object_type) continue;
+                
+                auto user1_it = edge_val.object_val.find("user1");
+                auto user2_it = edge_val.object_val.find("user2");
+                
+                if (user1_it == edge_val.object_val.end() ||
+                    user2_it == edge_val.object_val.end()) {
+                    continue;
+                }
+                
+                uint64_t user1 = (uint64_t)user1_it->second.number_val;
+                uint64_t user2 = (uint64_t)user2_it->second.number_val;
+                
+                if (friend_graph.contains_vertex(user1) && friend_graph.contains_vertex(user2)) {
+                    friend_graph.add_edge(user1, user2);
                 }
             }
         }
