@@ -1,1 +1,0 @@
-/usr/bin/c++ CMakeFiles/chess_client.dir/source/client/client_main.cpp.o CMakeFiles/chess_client.dir/source/client/network_client.cpp.o -o chess_client  raylib/raylib/libraylib.a -lpthread /usr/lib/x86_64-linux-gnu/libOpenGL.so /usr/lib/x86_64-linux-gnu/libGLX.so /usr/lib/x86_64-linux-gnu/libGLU.so /usr/lib/x86_64-linux-gnu/librt.a -lm -ldl -lm 

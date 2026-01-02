@@ -1,0 +1,35 @@
+class auth {
+    static set_token(token) {
+        localStorage.setItem('auth_token', token);
+    }
+    
+    static get_token() {
+        return localStorage.getItem('auth_token') || '';
+    }
+    
+    static clear_token() {
+        localStorage.removeItem('auth_token');
+    }
+    
+    static is_authenticated() {
+        return !!this.get_token();
+    }
+    
+    static async login(username, password) {
+        const response = await api_client.login(username, password);
+        if (response.token) {
+            this.set_token(response.token);
+            return true;
+        }
+        return false;
+    }
+    
+    static async register(username, password) {
+        return await api_client.register(username, password);
+    }
+    
+    static async logout() {
+        await api_client.logout();
+        this.clear_token();
+    }
+}
