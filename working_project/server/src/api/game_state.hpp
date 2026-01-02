@@ -329,8 +329,32 @@ inline bool game_state::record_match(uint64_t player1_id, uint64_t player2_id, u
     
     match_history.insert(match.timestamp, match);
     
-    update_user_elo(player1_id, elo_change);
-    update_user_elo(player2_id, -elo_change);
+    std::string username1 = get_username_by_id(player1_id);
+    std::string username2 = get_username_by_id(player2_id);
+    
+    if (!username1.empty()) {
+        user_data user;
+        if (users.find(username1, user)) {
+            user.elo_rating += elo_change;
+            user.total_matches += 1;
+            if (winner_id == player1_id) user.wins += 1;
+            else user.losses += 1;
+            users.update(username1, user);
+            session_cache.put(player1_id, user);
+        }
+    }
+    
+    if (!username2.empty()) {
+        user_data user;
+        if (users.find(username2, user)) {
+            user.elo_rating -= elo_change;
+            user.total_matches += 1;
+            if (winner_id == player2_id) user.wins += 1;
+            else user.losses += 1;
+            users.update(username2, user);
+            session_cache.put(player2_id, user);
+        }
+    }
     
     return true;
 }

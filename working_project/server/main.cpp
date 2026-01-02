@@ -5,6 +5,9 @@
 #include <sstream>
 #include <unistd.h>
 #include <limits.h>
+#include <algorithm>
+#include <vector>
+#include <sys/stat.h>
 
 #include "src/network/http_server.hpp"
 #include "src/api/game_state.hpp"
@@ -99,7 +102,10 @@ std::string handle_get_user(const http_request& req) {
         std::string json = "{\"user_id\":" + std::to_string(user.user_id) + 
                ",\"username\":\"" + user.username + 
                "\",\"elo\":" + std::to_string(user.elo_rating) + 
-               ",\"matches\":" + std::to_string(user.total_matches) + "}";
+               ",\"matches\":" + std::to_string(user.total_matches) +
+               ",\"wins\":" + std::to_string(user.wins) +
+               ",\"losses\":" + std::to_string(user.losses) +
+               ",\"draws\":" + std::to_string(user.draws) + "}";
         return json;
     }
     
@@ -107,22 +113,38 @@ std::string handle_get_user(const http_request& req) {
 }
 
 std::string handle_leaderboard(const http_request& req) {
+    // Get all users and sort by Elo rating (using max heap approach)
+    std::vector<std::pair<int, user_data>> all_users;
+    
+    // Use the game_state's internal method to get all users
+    // We'll need to add a method to game_state to get all users
+    // For now, let's use a workaround by accessing through user_id_to_username
+    std::vector<user_data> users_list;
+    game->get_all_users(users_list);
+    
+    // Sort by Elo rating (descending)
+    std::sort(users_list.begin(), users_list.end(), 
+        [](const user_data& a, const user_data& b) {
+            return a.elo_rating > b.elo_rating;
+        });
+    
     std::string result = "{\"leaderboard\":[";
     bool first = true;
+    int rank = 1;
     
-    for (int i = 1; i <= 20; i++) {
-        user_data user;
-        if (game->get_user(i, user)) {
-            if (!first) result += ",";
-            result += "{\"rank\":" + std::to_string(i) + 
-                      ",\"user_id\":" + std::to_string(user.user_id) +
-                      ",\"username\":\"" + user.username + 
-                      "\",\"elo\":" + std::to_string(user.elo_rating) +
-                      ",\"matches\":" + std::to_string(user.total_matches) +
-                      ",\"wins\":" + std::to_string(user.wins) +
-                      ",\"losses\":" + std::to_string(user.losses) + "}";
-            first = false;
-        }
+    // Return top 50 players
+    for (size_t i = 0; i < users_list.size() && i < 50; i++) {
+        const user_data& user = users_list[i];
+        if (!first) result += ",";
+        result += "{\"rank\":" + std::to_string(rank) + 
+                  ",\"user_id\":" + std::to_string(user.user_id) +
+                  ",\"username\":\"" + user.username + 
+                  "\",\"elo\":" + std::to_string(user.elo_rating) +
+                  ",\"matches\":" + std::to_string(user.total_matches) +
+                  ",\"wins\":" + std::to_string(user.wins) +
+                  ",\"losses\":" + std::to_string(user.losses) + "}";
+        first = false;
+        rank++;
     }
     
     result += "]}";
@@ -221,9 +243,19 @@ std::string handle_get_match_history(const http_request& req) {
     for (const auto& match : history) {
         if (!first) result += ",";
         int change = (match.player1_id == user_id) ? match.elo_change_p1 : match.elo_change_p2;
+        uint64_t opponent_id = (match.player1_id == user_id) ? match.player2_id : match.player1_id;
+        
+        user_data opponent;
+        std::string opponent_name = "Unknown";
+        if (game->get_user(opponent_id, opponent)) {
+            opponent_name = opponent.username;
+        }
+        
         result += "{\"match_id\":" + std::to_string(match.match_id) +
                   ",\"player1_id\":" + std::to_string(match.player1_id) +
                   ",\"player2_id\":" + std::to_string(match.player2_id) +
+                  ",\"opponent_id\":" + std::to_string(opponent_id) +
+                  ",\"opponent_username\":\"" + opponent_name + "\"" +
                   ",\"winner_id\":" + std::to_string(match.winner_id) +
                   ",\"elo_change\":" + std::to_string(change) + "}";
         first = false;
@@ -253,7 +285,17 @@ std::string handle_record_match(const http_request& req) {
     uint64_t opponent_id = (uint64_t)body.object_val["opponent_id"].number_val;
     uint64_t winner_id = (uint64_t)body.object_val["winner_id"].number_val;
     
-    int elo_change = (winner_id == user_id) ? 16 : -16;
+    // Handle draw (winner_id == 0 means draw)
+    int elo_change = 0;
+    if (winner_id == 0) {
+        // Draw - no Elo change
+        elo_change = 0;
+    } else if (winner_id == user_id) {
+        elo_change = 16;  // Win
+    } else {
+        elo_change = -16;  // Loss
+    }
+    
     if (game->record_match(user_id, opponent_id, winner_id, elo_change)) {
         return "{\"status\":\"ok\",\"elo_change\":" + std::to_string(elo_change) + "}";
     }
@@ -348,7 +390,6 @@ std::string handle_health(const http_request& req) {
 }
 
 int main() {
-    // Change to the directory where the executable is located
     char exe_path[1024];
     ssize_t len = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
     if (len != -1) {
@@ -357,16 +398,29 @@ int main() {
         size_t last_slash = exe_dir.find_last_of("/");
         if (last_slash != std::string::npos) {
             exe_dir = exe_dir.substr(0, last_slash);
-            // Go up one level from bin/ to working_project/
             if (exe_dir.find("/bin") != std::string::npos) {
-                exe_dir = exe_dir.substr(0, exe_dir.find_last_of("/"));
+                size_t bin_pos = exe_dir.find("/bin");
+                if (bin_pos != std::string::npos) {
+                    exe_dir = exe_dir.substr(0, bin_pos);
+                } else {
+                    exe_dir = exe_dir.substr(0, exe_dir.find_last_of("/"));
+                }
             }
             chdir(exe_dir.c_str());
         }
     }
     
+    std::string client_path = "client";
+    if (access("client", F_OK) != 0) {
+        if (access("../client", F_OK) == 0) {
+            client_path = "../client";
+        } else if (access("../../client", F_OK) == 0) {
+            client_path = "../../client";
+        }
+    }
+    
     game = std::make_unique<game_state>();
-    server = std::make_unique<http_server>(8080, "../client");
+    server = std::make_unique<http_server>(8080, client_path);
     
     server->register_route("GET", "/health", handle_health);
     server->register_route("POST", "/auth/register", handle_register);

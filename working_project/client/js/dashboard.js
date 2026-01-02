@@ -146,13 +146,26 @@ class ui {
     static async load_user_stats() {
         try {
             const user = await api_client.get_user();
-            if (user && user.user_id) {
-                document.getElementById('user-elo').textContent = user.elo || '1600';
-                document.getElementById('user-matches').textContent = user.matches || '0';
-                document.getElementById('user-wins').textContent = user.wins || '0';
+            console.log('User data received:', user);
+            if (user && !user.error && user.user_id) {
+                if (document.getElementById('user-elo')) {
+                    document.getElementById('user-elo').textContent = user.elo || user.elo_rating || '1600';
+                }
+                if (document.getElementById('user-matches')) {
+                    document.getElementById('user-matches').textContent = user.matches || user.total_matches || '0';
+                }
+                if (document.getElementById('user-wins')) {
+                    document.getElementById('user-wins').textContent = user.wins || '0';
+                }
                 
-                const winrate = user.matches > 0 ? Math.round((user.wins / user.matches) * 100) : 0;
-                document.getElementById('user-winrate').textContent = winrate + '%';
+                const totalMatches = user.matches || user.total_matches || 0;
+                const wins = user.wins || 0;
+                const winrate = totalMatches > 0 ? Math.round((wins / totalMatches) * 100) : 0;
+                if (document.getElementById('user-winrate')) {
+                    document.getElementById('user-winrate').textContent = winrate + '%';
+                }
+            } else if (user && user.error) {
+                console.error('Error loading user stats:', user.error);
             }
         } catch (error) {
             console.error('Failed to load user stats:', error);
@@ -165,18 +178,33 @@ class ui {
     }
 
     static async queue_for_match() {
-        const result = await api_client.queue_for_match();
-        if (result.status === 'ok') {
-            this.show_notification('Queued for matchmaking...', 'success');
-            await new Promise(r => setTimeout(r, 2000));
+        try {
+            this.show_notification('Queuing for matchmaking...', 'success');
+            const result = await api_client.queue_for_match();
+            console.log('Queue result:', result);
             
-            const match = await api_client.find_match();
-            if (match.opponent_id) {
-                this.start_game(match.opponent_id, match.opponent_username);
-            } else {
-                this.show_notification('No opponent found yet', 'warning');
+            if (result.status === 'ok' || result.message) {
+                this.show_notification('Queued for matchmaking...', 'success');
+                
+                for (let i = 0; i < 5; i++) {
+                    await new Promise(r => setTimeout(r, 1000));
+                    const match = await api_client.find_match();
+                    console.log('Find match result:', match);
+                    
+                    if (match.status === 'ok' && match.opponent_id) {
+                        this.start_game(match.opponent_id, match.opponent_username || 'Opponent');
+                        return;
+                    }
+                }
+                
+                this.show_notification('No opponent found. Try again later.', 'warning');
                 this.show_dashboard();
+            } else {
+                this.show_notification('Failed to queue: ' + (result.error || 'Unknown error'), 'error');
             }
+        } catch (error) {
+            console.error('Queue error:', error);
+            this.show_notification('Error queuing for match: ' + error.message, 'error');
         }
     }
 
@@ -242,61 +270,70 @@ class ui {
     }
 
     static async record_draw(opponent_id) {
+        const token = auth.get_token();
+        const user_id = parseInt(token.split('_')[0]);
+        await api_client.record_match_result(opponent_id, 0);  // 0 means draw
         this.show_notification('Draw recorded. No Elo change', 'warning');
         this.show_dashboard();
     }
 
     static async view_leaderboard() {
-        const result = await api_client.get_leaderboard();
-        
-        let html = `
-            <div class="navbar">
-                <div class="navbar-content">
-                    <h1>🏆 Leaderboard</h1>
-                    <button onclick="ui.show_dashboard()" class="btn-secondary">Back</button>
+        try {
+            const result = await api_client.get_leaderboard();
+            console.log('Leaderboard result:', result);
+            
+            let html = `
+                <div class="navbar">
+                    <div class="navbar-content">
+                        <h1>🏆 Leaderboard</h1>
+                        <button onclick="ui.show_dashboard()" class="btn-secondary">Back</button>
+                    </div>
                 </div>
-            </div>
-            <div class="dashboard">
-                <div class="card">
-                    <div class="card-header">Top Players</div>
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Rank</th>
-                                <th>Player</th>
-                                <th>Elo Rating</th>
-                                <th>Matches</th>
-                                <th>Wins</th>
-                                <th>Losses</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-        `;
-        
-        if (result.leaderboard && Array.isArray(result.leaderboard)) {
-            result.leaderboard.forEach((player, idx) => {
-                const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : '';
-                html += `
-                    <tr>
-                        <td><strong>${medal} #${player.rank}</strong></td>
-                        <td>${player.username}</td>
-                        <td style="color: var(--primary); font-weight: bold;">${player.elo}</td>
-                        <td>${player.matches}</td>
-                        <td><span class="badge badge-success">${player.wins}</span></td>
-                        <td><span class="badge badge-danger">${player.losses}</span></td>
-                    </tr>
-                `;
-            });
+                <div class="dashboard">
+                    <div class="card">
+                        <div class="card-header">Top Players</div>
+            `;
+            
+            if (result.leaderboard && Array.isArray(result.leaderboard) && result.leaderboard.length > 0) {
+                html += `<table>
+                    <thead>
+                        <tr>
+                            <th>Rank</th>
+                            <th>Player</th>
+                            <th>Elo Rating</th>
+                            <th>Matches</th>
+                            <th>Wins</th>
+                            <th>Losses</th>
+                        </tr>
+                    </thead>
+                    <tbody>`;
+                
+                result.leaderboard.forEach((player, idx) => {
+                    const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : '';
+                    const rank = player.rank || (idx + 1);
+                    html += `
+                        <tr>
+                            <td><strong>${medal} #${rank}</strong></td>
+                            <td>${player.username || 'Unknown'}</td>
+                            <td style="color: var(--primary); font-weight: bold;">${player.elo || player.elo_rating || 1600}</td>
+                            <td>${player.matches || player.total_matches || 0}</td>
+                            <td><span class="badge badge-success">${player.wins || 0}</span></td>
+                            <td><span class="badge badge-danger">${player.losses || 0}</span></td>
+                        </tr>
+                    `;
+                });
+                
+                html += `</tbody></table>`;
+            } else {
+                html += `<p style="color: var(--text-muted); text-align: center; padding: 2rem;">No players yet. Be the first!</p>`;
+            }
+            
+            html += `</div></div>`;
+            document.getElementById('app').innerHTML = html;
+        } catch (error) {
+            console.error('Leaderboard error:', error);
+            this.show_notification('Failed to load leaderboard: ' + error.message, 'error');
         }
-        
-        html += `
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        `;
-        
-        document.getElementById('app').innerHTML = html;
     }
 
     static async view_friends() {
@@ -346,57 +383,64 @@ class ui {
     }
 
     static async view_match_history() {
-        const result = await api_client.get_match_history();
-        
-        let html = `
-            <div class="navbar">
-                <div class="navbar-content">
-                    <h1>📊 Match History</h1>
-                    <button onclick="ui.show_dashboard()" class="btn-secondary">Back</button>
+        try {
+            const result = await api_client.get_match_history();
+            console.log('Match history result:', result);
+            
+            let html = `
+                <div class="navbar">
+                    <div class="navbar-content">
+                        <h1>📊 Match History</h1>
+                        <button onclick="ui.show_dashboard()" class="btn-secondary">Back</button>
+                    </div>
                 </div>
-            </div>
-            <div class="dashboard">
-                <div class="card">
-                    <div class="card-header">Your Matches</div>
-        `;
-        
-        if (result.matches && result.matches.length > 0) {
-            html += `<table>
-                <thead>
-                    <tr>
-                        <th>Match ID</th>
-                        <th>Opponent</th>
-                        <th>Result</th>
-                        <th>Elo Change</th>
-                    </tr>
-                </thead>
-                <tbody>`;
+                <div class="dashboard">
+                    <div class="card">
+                        <div class="card-header">Your Matches</div>
+            `;
             
-            result.matches.forEach(match => {
-                const token = auth.get_token();
-                const user_id = parseInt(token.split('_')[0]);
-                const is_winner = match.winner_id === user_id;
-                const result_text = is_winner ? '✓ WIN' : match.winner_id === 0 ? 'DRAW' : '✗ LOSS';
-                const result_class = is_winner ? 'badge-success' : 'badge-danger';
+            if (result.matches && Array.isArray(result.matches) && result.matches.length > 0) {
+                html += `<table>
+                    <thead>
+                        <tr>
+                            <th>Match ID</th>
+                            <th>Opponent</th>
+                            <th>Result</th>
+                            <th>Elo Change</th>
+                        </tr>
+                    </thead>
+                    <tbody>`;
                 
-                html += `
-                    <tr>
-                        <td>#${match.match_id}</td>
-                        <td>Player ${match.player2_id}</td>
-                        <td><span class="badge ${result_class}">${result_text}</span></td>
-                        <td style="color: ${match.elo_change > 0 ? '#22c55e' : '#ef4444'};">${match.elo_change > 0 ? '+' : ''}${match.elo_change}</td>
-                    </tr>
-                `;
-            });
+                result.matches.forEach(match => {
+                    const token = auth.get_token();
+                    const user_id = parseInt(token.split('_')[0]);
+                    const is_winner = match.winner_id === user_id;
+                    const is_draw = match.winner_id === 0;
+                    const result_text = is_winner ? '✓ WIN' : is_draw ? 'DRAW' : '✗ LOSS';
+                    const result_class = is_winner ? 'badge-success' : is_draw ? 'badge-warning' : 'badge-danger';
+                    const opponent_name = match.opponent_username || `Player ${match.opponent_id || match.player2_id}`;
+                    
+                    html += `
+                        <tr>
+                            <td>#${match.match_id}</td>
+                            <td>${opponent_name}</td>
+                            <td><span class="badge ${result_class}">${result_text}</span></td>
+                            <td style="color: ${match.elo_change > 0 ? '#22c55e' : match.elo_change < 0 ? '#ef4444' : '#666'};">${match.elo_change > 0 ? '+' : ''}${match.elo_change}</td>
+                        </tr>
+                    `;
+                });
+                
+                html += `</tbody></table>`;
+            } else {
+                html += `<p style="color: var(--text-muted); text-align: center; padding: 2rem;">No matches yet. Go play!</p>`;
+            }
             
-            html += `</tbody></table>`;
-        } else {
-            html += `<p style="color: var(--text-muted); text-align: center;">No matches yet. Go play!</p>`;
+            html += `</div></div>`;
+            document.getElementById('app').innerHTML = html;
+        } catch (error) {
+            console.error('Match history error:', error);
+            this.show_notification('Failed to load match history: ' + error.message, 'error');
         }
-        
-        html += `</div></div>`;
-        
-        document.getElementById('app').innerHTML = html;
     }
 
     static async logout() {
