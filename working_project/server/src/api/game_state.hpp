@@ -11,7 +11,15 @@
 #include "../models/session.hpp"
 #include "../utils/password_hash.hpp"
 #include "../utils/time_utils.hpp"
+#include "../utils/file_utils.hpp"
+#include "../utils/json_parser.hpp"
 #include <mutex>
+#include <fstream>
+#include <sstream>
+#include <algorithm>
+#include <unistd.h>
+#include <cstdlib>
+#include <cctype>
 
 struct matchmaking_entry {
     uint64_t user_id;
@@ -38,6 +46,7 @@ private:
     graph<std::string> friend_graph;
     max_heap<matchmaking_entry> matchmaking_queue;
     lru_cache<uint64_t, user_data> session_cache;
+    hash_table<uint64_t, std::vector<uint64_t>> pending_friend_requests;
     
     uint64_t next_match_id;
     uint64_t next_user_id;
@@ -45,6 +54,10 @@ private:
     std::mutex state_mutex;
     
     std::string get_username_by_id(uint64_t user_id);
+    void save_users();
+    void load_users();
+    void save_friend_requests();
+    void load_friend_requests();
     
 public:
     game_state();
@@ -57,10 +70,13 @@ public:
     uint64_t get_user_id_by_username(const std::string& username);
     
     bool get_user(uint64_t user_id, user_data& user);
+    void get_all_users(std::vector<user_data>& users_list);
     bool update_user_elo(uint64_t user_id, int elo_change);
     
     bool send_friend_request(uint64_t sender_id, uint64_t receiver_id);
     bool accept_friend_request(uint64_t user_id, uint64_t friend_id);
+    bool reject_friend_request(uint64_t user_id, uint64_t friend_id);
+    void get_pending_friend_requests(uint64_t user_id, std::vector<uint64_t>& requests);
     void get_friends(uint64_t user_id, std::vector<uint64_t>& friends);
     void get_friend_recommendations(uint64_t user_id, std::vector<uint64_t>& recommendations);
     
@@ -71,9 +87,16 @@ public:
     void get_match_history(uint64_t user_id, std::vector<match_data>& history);
 };
 
-inline game_state::game_state() : users(2048), user_id_to_username(2048), sessions(1024), match_history(5), friend_graph(), session_cache(512) {
+inline game_state::game_state() : users(2048), user_id_to_username(2048), sessions(1024), match_history(5), friend_graph(), session_cache(512), pending_friend_requests(1024) {
     next_match_id = 1;
     next_user_id = 1;
+    try {
+        load_users();
+        load_friend_requests();
+    } catch (...) {
+        next_match_id = 1;
+        next_user_id = 1;
+    }
 }
 
 inline std::string game_state::get_username_by_id(uint64_t user_id) {
@@ -109,6 +132,7 @@ inline bool game_state::register_user(const std::string& username, const std::st
     users.insert(username, new_user);
     user_id_to_username.insert(new_user.user_id, username);
     friend_graph.add_vertex(new_user.user_id, username);
+    save_users();
     
     return true;
 }
@@ -129,6 +153,7 @@ inline bool game_state::login_user(const std::string& username, const std::strin
     user.last_login_timestamp = time_utils::get_current_timestamp();
     users.update(username, user);
     friend_graph.set_online(user.user_id, true);
+    save_users();
     
     session_data session;
     session.token = std::to_string(user.user_id) + "_" + std::to_string(time_utils::get_current_timestamp_ms());
@@ -200,6 +225,14 @@ inline bool game_state::get_user(uint64_t user_id, user_data& user) {
     return false;
 }
 
+inline void game_state::get_all_users(std::vector<user_data>& users_list) {
+    std::lock_guard<std::mutex> lock(state_mutex);
+    users_list.clear();
+    users.iterate([&](const std::string& username, const user_data& user) {
+        users_list.push_back(user);
+    });
+}
+
 inline bool game_state::update_user_elo(uint64_t user_id, int elo_change) {
     std::lock_guard<std::mutex> lock(state_mutex);
     
@@ -216,6 +249,7 @@ inline bool game_state::update_user_elo(uint64_t user_id, int elo_change) {
     user.elo_rating += elo_change;
     users.update(username, user);
     session_cache.put(user_id, user);
+    save_users();
     
     return true;
 }
@@ -284,11 +318,33 @@ inline bool game_state::find_match(uint64_t user_id, uint64_t& opponent_id) {
 inline bool game_state::send_friend_request(uint64_t sender_id, uint64_t receiver_id) {
     std::lock_guard<std::mutex> lock(state_mutex);
     
+    if (sender_id == receiver_id) {
+        return false;
+    }
+    
     if (!friend_graph.contains_vertex(sender_id) || !friend_graph.contains_vertex(receiver_id)) {
         return false;
     }
     
-    friend_graph.add_edge(sender_id, receiver_id);
+    std::vector<uint64_t> current_friends;
+    friend_graph.get_friends(sender_id, current_friends);
+    if (std::find(current_friends.begin(), current_friends.end(), receiver_id) != current_friends.end()) {
+        return false;
+    }
+    
+    std::vector<uint64_t> pending;
+    if (!pending_friend_requests.find(receiver_id, pending)) {
+        pending = std::vector<uint64_t>();
+    }
+    
+    if (std::find(pending.begin(), pending.end(), sender_id) != pending.end()) {
+        return false;
+    }
+    
+    pending.push_back(sender_id);
+    pending_friend_requests.insert(receiver_id, pending);
+    save_friend_requests();
+    
     return true;
 }
 
@@ -299,8 +355,57 @@ inline bool game_state::accept_friend_request(uint64_t user_id, uint64_t friend_
         return false;
     }
     
+    std::vector<uint64_t> pending;
+    if (!pending_friend_requests.find(user_id, pending)) {
+        return false;
+    }
+    
+    auto it = std::find(pending.begin(), pending.end(), friend_id);
+    if (it == pending.end()) {
+        return false;
+    }
+    
+    pending.erase(it);
+    if (pending.empty()) {
+        pending_friend_requests.remove(user_id);
+    } else {
+        pending_friend_requests.insert(user_id, pending);
+    }
+    
     friend_graph.add_edge(user_id, friend_id);
+    save_friend_requests();
+    
     return true;
+}
+
+inline bool game_state::reject_friend_request(uint64_t user_id, uint64_t friend_id) {
+    std::lock_guard<std::mutex> lock(state_mutex);
+    
+    std::vector<uint64_t> pending;
+    if (!pending_friend_requests.find(user_id, pending)) {
+        return false;
+    }
+    
+    auto it = std::find(pending.begin(), pending.end(), friend_id);
+    if (it == pending.end()) {
+        return false;
+    }
+    
+    pending.erase(it);
+    if (pending.empty()) {
+        pending_friend_requests.remove(user_id);
+    } else {
+        pending_friend_requests.insert(user_id, pending);
+    }
+    
+    save_friend_requests();
+    return true;
+}
+
+inline void game_state::get_pending_friend_requests(uint64_t user_id, std::vector<uint64_t>& requests) {
+    std::lock_guard<std::mutex> lock(state_mutex);
+    requests.clear();
+    pending_friend_requests.find(user_id, requests);
 }
 
 inline void game_state::get_friends(uint64_t user_id, std::vector<uint64_t>& friends) {
@@ -328,6 +433,7 @@ inline bool game_state::record_match(uint64_t player1_id, uint64_t player2_id, u
     match.result = (winner_id == player1_id ? 1 : 2);
     
     match_history.insert(match.timestamp, match);
+    save_users();
     
     std::string username1 = get_username_by_id(player1_id);
     std::string username2 = get_username_by_id(player2_id);
@@ -383,6 +489,269 @@ inline uint64_t game_state::get_user_id_by_username(const std::string& username)
         return user.user_id;
     }
     return 0;
+}
+
+inline void game_state::save_users() {
+    std::string data_dir = "server/data";
+    if (access("server/data", F_OK) != 0) {
+        if (access("data", F_OK) == 0) {
+            data_dir = "data";
+        } else {
+            system("mkdir -p server/data 2>/dev/null || mkdir -p data 2>/dev/null");
+            if (access("server/data", F_OK) == 0) {
+                data_dir = "server/data";
+            } else if (access("data", F_OK) == 0) {
+                data_dir = "data";
+            } else {
+                return;
+            }
+        }
+    }
+    
+    std::string filename = data_dir + "/users.json";
+    std::ofstream file(filename);
+    if (!file.is_open()) {
+        return;
+    }
+    
+    auto escape_json = [](const std::string& str) -> std::string {
+        std::string result;
+        for (unsigned char c : str) {
+            if (c == '"') result += "\\\"";
+            else if (c == '\\') result += "\\\\";
+            else if (c == '\n') result += "\\n";
+            else if (c == '\r') result += "\\r";
+            else if (c == '\t') result += "\\t";
+            else if (c < 32 || c > 126) {
+                char hex[8];
+                snprintf(hex, sizeof(hex), "\\u%04x", c);
+                result += hex;
+            } else {
+                result += c;
+            }
+        }
+        return result;
+    };
+    
+    file << "{\"users\":[";
+    bool first = true;
+    users.iterate([&](const std::string& username, const user_data& user) {
+        if (!first) file << ",";
+        first = false;
+        file << "{";
+        file << "\"username\":\"" << escape_json(username) << "\",";
+        file << "\"user_id\":" << user.user_id << ",";
+        file << "\"password_hash\":\"" << escape_json(user.password_hash) << "\",";
+        file << "\"salt\":\"" << escape_json(user.salt) << "\",";
+        file << "\"elo_rating\":" << user.elo_rating << ",";
+        file << "\"total_matches\":" << user.total_matches << ",";
+        file << "\"wins\":" << user.wins << ",";
+        file << "\"losses\":" << user.losses << ",";
+        file << "\"draws\":" << user.draws << ",";
+        file << "\"registration_timestamp\":" << user.registration_timestamp << ",";
+        file << "\"last_login_timestamp\":" << user.last_login_timestamp << ",";
+        file << "\"is_online\":" << (user.is_online ? "true" : "false");
+        file << "}";
+    });
+    file << "],\"next_user_id\":" << next_user_id << ",\"next_match_id\":" << next_match_id << "}";
+    file.close();
+}
+
+inline void game_state::load_users() {
+    std::string filename = "server/data/users.json";
+    if (access(filename.c_str(), F_OK) != 0) {
+        filename = "data/users.json";
+        if (access(filename.c_str(), F_OK) != 0) {
+            return;
+        }
+    }
+    
+    std::ifstream file(filename);
+    if (!file.is_open()) {
+        return;
+    }
+    
+    std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    file.close();
+    
+    if (content.empty() || content.length() < 10) {
+        return;
+    }
+    
+    try {
+        json_value root = json_parser::parse(content);
+        if (root.value_type != json_value::object_type) {
+            return;
+        }
+        
+        auto next_user_it = root.object_val.find("next_user_id");
+        if (next_user_it != root.object_val.end() && next_user_it->second.value_type == json_value::number_type) {
+            next_user_id = (uint64_t)next_user_it->second.number_val;
+        }
+        
+        auto next_match_it = root.object_val.find("next_match_id");
+        if (next_match_it != root.object_val.end() && next_match_it->second.value_type == json_value::number_type) {
+            next_match_id = (uint64_t)next_match_it->second.number_val;
+        }
+        
+        auto users_it = root.object_val.find("users");
+        if (users_it != root.object_val.end() && users_it->second.value_type == json_value::array_type) {
+            for (const auto& user_val : users_it->second.array_val) {
+                if (user_val.value_type != json_value::object_type) continue;
+                
+                auto username_it = user_val.object_val.find("username");
+                if (username_it == user_val.object_val.end() || username_it->second.value_type != json_value::string_type) {
+                    continue;
+                }
+                
+                std::string username = username_it->second.string_val;
+                if (username.empty()) continue;
+                
+                auto user_id_it = user_val.object_val.find("user_id");
+                auto password_hash_it = user_val.object_val.find("password_hash");
+                auto salt_it = user_val.object_val.find("salt");
+                
+                if (user_id_it == user_val.object_val.end() || 
+                    password_hash_it == user_val.object_val.end() ||
+                    salt_it == user_val.object_val.end()) {
+                    continue;
+                }
+                
+                user_data user;
+                user.user_id = (uint64_t)user_id_it->second.number_val;
+                user.username = username;
+                user.password_hash = password_hash_it->second.string_val;
+                user.salt = salt_it->second.string_val;
+                
+                auto elo_it = user_val.object_val.find("elo_rating");
+                user.elo_rating = (elo_it != user_val.object_val.end() && elo_it->second.value_type == json_value::number_type) ? (int)elo_it->second.number_val : 1600;
+                
+                auto matches_it = user_val.object_val.find("total_matches");
+                user.total_matches = (matches_it != user_val.object_val.end() && matches_it->second.value_type == json_value::number_type) ? (int)matches_it->second.number_val : 0;
+                
+                auto wins_it = user_val.object_val.find("wins");
+                user.wins = (wins_it != user_val.object_val.end() && wins_it->second.value_type == json_value::number_type) ? (int)wins_it->second.number_val : 0;
+                
+                auto losses_it = user_val.object_val.find("losses");
+                user.losses = (losses_it != user_val.object_val.end() && losses_it->second.value_type == json_value::number_type) ? (int)losses_it->second.number_val : 0;
+                
+                auto draws_it = user_val.object_val.find("draws");
+                user.draws = (draws_it != user_val.object_val.end() && draws_it->second.value_type == json_value::number_type) ? (int)draws_it->second.number_val : 0;
+                
+                auto reg_time_it = user_val.object_val.find("registration_timestamp");
+                user.registration_timestamp = (reg_time_it != user_val.object_val.end() && reg_time_it->second.value_type == json_value::number_type) ? (uint64_t)reg_time_it->second.number_val : 0;
+                
+                auto login_time_it = user_val.object_val.find("last_login_timestamp");
+                user.last_login_timestamp = (login_time_it != user_val.object_val.end() && login_time_it->second.value_type == json_value::number_type) ? (uint64_t)login_time_it->second.number_val : 0;
+                
+                auto online_it = user_val.object_val.find("is_online");
+                user.is_online = (online_it != user_val.object_val.end() && online_it->second.value_type == json_value::bool_type) ? online_it->second.bool_val : false;
+                
+                users.insert(username, user);
+                user_id_to_username.insert(user.user_id, username);
+                friend_graph.add_vertex(user.user_id, username);
+            }
+        }
+    } catch (...) {
+    }
+}
+
+inline void game_state::save_friend_requests() {
+    std::string data_dir = "server/data";
+    if (access("server/data", F_OK) != 0) {
+        if (access("data", F_OK) == 0) {
+            data_dir = "data";
+        } else {
+            system("mkdir -p server/data 2>/dev/null || mkdir -p data 2>/dev/null");
+            if (access("server/data", F_OK) == 0) {
+                data_dir = "server/data";
+            } else if (access("data", F_OK) == 0) {
+                data_dir = "data";
+            } else {
+                return;
+            }
+        }
+    }
+    
+    std::string filename = data_dir + "/friend_requests.json";
+    std::ofstream file(filename);
+    if (!file.is_open()) {
+        return;
+    }
+    
+    file << "{\"requests\":[";
+    bool first = true;
+    pending_friend_requests.iterate([&](uint64_t receiver_id, const std::vector<uint64_t>& requests) {
+        if (!first) file << ",";
+        first = false;
+        file << "{\"receiver_id\":" << receiver_id << ",\"senders\":[";
+        for (size_t i = 0; i < requests.size(); i++) {
+            if (i > 0) file << ",";
+            file << requests[i];
+        }
+        file << "]}";
+    });
+    file << "]}";
+    file.close();
+}
+
+inline void game_state::load_friend_requests() {
+    std::string filename = "server/data/friend_requests.json";
+    if (access(filename.c_str(), F_OK) != 0) {
+        filename = "data/friend_requests.json";
+        if (access(filename.c_str(), F_OK) != 0) {
+            return;
+        }
+    }
+    
+    std::ifstream file(filename);
+    if (!file.is_open()) {
+        return;
+    }
+    
+    std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    file.close();
+    
+    if (content.empty() || content.length() < 10) {
+        return;
+    }
+    
+    try {
+        json_value root = json_parser::parse(content);
+        if (root.value_type != json_value::object_type) {
+            return;
+        }
+        
+        auto requests_it = root.object_val.find("requests");
+        if (requests_it != root.object_val.end() && requests_it->second.value_type == json_value::array_type) {
+            for (const auto& req_val : requests_it->second.array_val) {
+                if (req_val.value_type != json_value::object_type) continue;
+                
+                auto receiver_it = req_val.object_val.find("receiver_id");
+                auto senders_it = req_val.object_val.find("senders");
+                
+                if (receiver_it == req_val.object_val.end() || 
+                    senders_it == req_val.object_val.end() ||
+                    senders_it->second.value_type != json_value::array_type) {
+                    continue;
+                }
+                
+                uint64_t receiver_id = (uint64_t)receiver_it->second.number_val;
+                std::vector<uint64_t> requests;
+                
+                for (const auto& sender_val : senders_it->second.array_val) {
+                    if (sender_val.value_type == json_value::number_type) {
+                        requests.push_back((uint64_t)sender_val.number_val);
+                    }
+                }
+                
+                if (!requests.empty()) {
+                    pending_friend_requests.insert(receiver_id, requests);
+                }
+            }
+        }
+    } catch (...) {
+    }
 }
 
 #endif

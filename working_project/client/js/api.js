@@ -93,4 +93,16 @@ class api_client {
     static async get_friend_recommendations() {
         return this.request('GET', '/friends/recommendations');
     }
+    
+    static async get_pending_friend_requests() {
+        return this.request('GET', '/friends/pending');
+    }
+    
+    static async get_friends() {
+        return this.request('GET', '/friends/list');
+    }
+    
+    static async reject_friend_request(friend_id) {
+        return this.request('POST', '/friends/reject', { friend_id });
+    }
 }

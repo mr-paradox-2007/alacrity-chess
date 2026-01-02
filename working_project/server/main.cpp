@@ -17,6 +17,9 @@ std::unique_ptr<game_state> game;
 std::unique_ptr<http_server> server;
 
 std::string extract_token(const http_request& req);
+std::string handle_get_pending_friend_requests(const http_request& req);
+std::string handle_get_friends(const http_request& req);
+std::string handle_reject_friend_request(const http_request& req);
 
 std::string handle_register(const http_request& req) {
     json_value body = json_parser::parse(req.body);
@@ -355,6 +358,92 @@ std::string handle_accept_friend_request(const http_request& req) {
     return "{\"error\":\"Failed to accept friend request\"}";
 }
 
+std::string handle_get_pending_friend_requests(const http_request& req) {
+    std::string token = extract_token(req);
+    if (token.empty()) {
+        return "{\"error\":\"Missing token\"}";
+    }
+    
+    uint64_t user_id = 0;
+    if (!game->verify_session(token, user_id)) {
+        return "{\"error\":\"Invalid session\"}";
+    }
+    
+    std::vector<uint64_t> pending;
+    game->get_pending_friend_requests(user_id, pending);
+    
+    std::string result = "{\"requests\":[";
+    bool first = true;
+    for (uint64_t sender_id : pending) {
+        user_data sender;
+        if (game->get_user(sender_id, sender)) {
+            if (!first) result += ",";
+            result += "{\"user_id\":" + std::to_string(sender_id) +
+                      ",\"username\":\"" + sender.username +
+                      "\",\"elo\":" + std::to_string(sender.elo_rating) + "}";
+            first = false;
+        }
+    }
+    result += "]}";
+    return result;
+}
+
+std::string handle_get_friends(const http_request& req) {
+    std::string token = extract_token(req);
+    if (token.empty()) {
+        return "{\"error\":\"Missing token\"}";
+    }
+    
+    uint64_t user_id = 0;
+    if (!game->verify_session(token, user_id)) {
+        return "{\"error\":\"Invalid session\"}";
+    }
+    
+    std::vector<uint64_t> friends;
+    game->get_friends(user_id, friends);
+    
+    std::string result = "{\"friends\":[";
+    bool first = true;
+    for (uint64_t friend_id : friends) {
+        user_data friend_user;
+        if (game->get_user(friend_id, friend_user)) {
+            if (!first) result += ",";
+            result += "{\"user_id\":" + std::to_string(friend_id) +
+                      ",\"username\":\"" + friend_user.username +
+                      "\",\"elo\":" + std::to_string(friend_user.elo_rating) + "}";
+            first = false;
+        }
+    }
+    result += "]}";
+    return result;
+}
+
+std::string handle_reject_friend_request(const http_request& req) {
+    std::string token = extract_token(req);
+    if (token.empty()) {
+        return "{\"error\":\"Missing token\"}";
+    }
+    
+    uint64_t user_id = 0;
+    if (!game->verify_session(token, user_id)) {
+        return "{\"error\":\"Invalid session\"}";
+    }
+    
+    json_value body = json_parser::parse(req.body);
+    if (body.value_type != json_value::object_type ||
+        body.object_val.find("friend_id") == body.object_val.end()) {
+        return "{\"error\":\"Invalid request\"}";
+    }
+    
+    uint64_t friend_id = (uint64_t)body.object_val["friend_id"].number_val;
+    
+    if (game->reject_friend_request(user_id, friend_id)) {
+        return "{\"status\":\"ok\",\"message\":\"Friend request rejected\"}";
+    }
+    
+    return "{\"error\":\"Failed to reject friend request\"}";
+}
+
 std::string handle_friend_recommendations(const http_request& req) {
     std::string token = extract_token(req);
     if (token.empty()) {
@@ -435,6 +524,9 @@ int main() {
     server->register_route("POST", "/match/record", handle_record_match);
     server->register_route("POST", "/friends/request", handle_send_friend_request);
     server->register_route("POST", "/friends/accept", handle_accept_friend_request);
+    server->register_route("POST", "/friends/reject", handle_reject_friend_request);
+    server->register_route("GET", "/friends/pending", handle_get_pending_friend_requests);
+    server->register_route("GET", "/friends/list", handle_get_friends);
     server->register_route("GET", "/friends/recommendations", handle_friend_recommendations);
     
     std::cout << "Chess Platform Server starting on port 8080..." << std::endl;

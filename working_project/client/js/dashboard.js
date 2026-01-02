@@ -337,42 +337,126 @@ class ui {
     }
 
     static async view_friends() {
-        document.getElementById('app').innerHTML = `
-            <div class="navbar">
-                <div class="navbar-content">
-                    <h1>👥 Friends & Search</h1>
-                    <button onclick="ui.show_dashboard()" class="btn-secondary">Back</button>
+        try {
+            const [pendingRequests, friendsList] = await Promise.all([
+                api_client.get_pending_friend_requests(),
+                api_client.get_friends()
+            ]);
+            
+            let html = `
+                <div class="navbar">
+                    <div class="navbar-content">
+                        <h1>👥 Friends</h1>
+                        <button onclick="ui.show_dashboard()" class="btn-secondary">Back</button>
+                    </div>
                 </div>
-            </div>
-            <div class="dashboard">
-                <div class="card" style="margin-bottom: 2rem;">
-                    <div class="card-header">Find & Add Friends</div>
-                    <input type="text" id="search-box" placeholder="Search players..." class="search-box">
-                    <div id="search-results"></div>
-                </div>
-            </div>
-        `;
-        
-        document.getElementById('search-box').addEventListener('input', async (e) => {
-            if (e.target.value.length > 1) {
-                const results = await api_client.search_users(e.target.value);
-                let html = '';
-                if (results.users && Array.isArray(results.users)) {
-                    results.users.forEach(user => {
-                        html += `
-                            <div class="user-item">
-                                <div>
-                                    <strong>${user.username}</strong><br>
-                                    <small style="color: var(--text-muted);">Elo: ${user.elo}</small>
-                                </div>
-                                <button onclick="ui.add_friend(${user.user_id})" class="btn-primary">Add Friend</button>
+                <div class="dashboard">
+                    <div class="card" style="margin-bottom: 2rem;">
+                        <div class="card-header">Pending Friend Requests</div>
+                        <div id="pending-requests">
+            `;
+            
+            if (pendingRequests.requests && pendingRequests.requests.length > 0) {
+                pendingRequests.requests.forEach(request => {
+                    html += `
+                        <div class="user-item" style="display: flex; justify-content: space-between; align-items: center; padding: 1rem; border-bottom: 1px solid var(--border);">
+                            <div>
+                                <strong>${request.username}</strong><br>
+                                <small style="color: var(--text-muted);">Elo: ${request.elo}</small>
                             </div>
-                        `;
-                    });
-                }
-                document.getElementById('search-results').innerHTML = html || '<p style="color: var(--text-muted);">No users found</p>';
+                            <div>
+                                <button onclick="ui.accept_friend(${request.user_id})" class="btn-success" style="margin-right: 0.5rem;">Accept</button>
+                                <button onclick="ui.reject_friend(${request.user_id})" class="btn-danger">Reject</button>
+                            </div>
+                        </div>
+                    `;
+                });
+            } else {
+                html += '<p style="color: var(--text-muted); text-align: center; padding: 1rem;">No pending requests</p>';
             }
-        });
+            
+            html += `
+                        </div>
+                    </div>
+                    
+                    <div class="card" style="margin-bottom: 2rem;">
+                        <div class="card-header">Your Friends</div>
+                        <div id="friends-list">
+            `;
+            
+            if (friendsList.friends && friendsList.friends.length > 0) {
+                friendsList.friends.forEach(friend => {
+                    html += `
+                        <div class="user-item" style="display: flex; justify-content: space-between; align-items: center; padding: 1rem; border-bottom: 1px solid var(--border);">
+                            <div>
+                                <strong>${friend.username}</strong><br>
+                                <small style="color: var(--text-muted);">Elo: ${friend.elo}</small>
+                            </div>
+                        </div>
+                    `;
+                });
+            } else {
+                html += '<p style="color: var(--text-muted); text-align: center; padding: 1rem;">No friends yet</p>';
+            }
+            
+            html += `
+                        </div>
+                    </div>
+                    
+                    <div class="card">
+                        <div class="card-header">Find & Add Friends</div>
+                        <input type="text" id="search-box" placeholder="Search players..." class="search-box" style="width: 100%; padding: 0.75rem; margin-bottom: 1rem;">
+                        <div id="search-results"></div>
+                    </div>
+                </div>
+            `;
+            
+            document.getElementById('app').innerHTML = html;
+            
+            document.getElementById('search-box').addEventListener('input', async (e) => {
+                if (e.target.value.length > 1) {
+                    const results = await api_client.search_users(e.target.value);
+                    let searchHtml = '';
+                    if (results.users && Array.isArray(results.users)) {
+                        results.users.forEach(user => {
+                            searchHtml += `
+                                <div class="user-item" style="display: flex; justify-content: space-between; align-items: center; padding: 1rem; border-bottom: 1px solid var(--border);">
+                                    <div>
+                                        <strong>${user.username}</strong><br>
+                                        <small style="color: var(--text-muted);">Elo: ${user.elo}</small>
+                                    </div>
+                                    <button onclick="ui.add_friend(${user.user_id})" class="btn-primary">Add Friend</button>
+                                </div>
+                            `;
+                        });
+                    }
+                    document.getElementById('search-results').innerHTML = searchHtml || '<p style="color: var(--text-muted);">No users found</p>';
+                }
+            });
+        } catch (error) {
+            console.error('Friends error:', error);
+            this.show_notification('Failed to load friends: ' + error.message, 'error');
+        }
+    }
+    
+    static async accept_friend(friend_id) {
+        const result = await api_client.accept_friend_request(friend_id);
+        if (result.status === 'ok') {
+            this.show_notification('✓ Friend request accepted!', 'success');
+            this.view_friends();
+        } else {
+            this.show_notification('Failed to accept request', 'error');
+        }
+    }
+    
+    static async reject_friend(friend_id) {
+        const result = await api_client.reject_friend_request(friend_id);
+        if (result.status === 'ok') {
+            this.show_notification('Friend request rejected', 'warning');
+            this.view_friends();
+        } else {
+            this.show_notification('Failed to reject request', 'error');
+        }
     }
 
     static async add_friend(friend_id) {
